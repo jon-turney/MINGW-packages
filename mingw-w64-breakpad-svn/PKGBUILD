@@ -51,14 +51,75 @@ package() {
     cd "${srcdir}/${_name}.build.${CARCH}"
     make DESTDIR="${pkgdir}" install
 
+    # Install headers
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/include/breakpad"
+    cd "${pkgdir}${MINGW_PREFIX}/include/breakpad"
+
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/include/breakpad/common/"
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/google_breakpad/common/* common/
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/common/scoped_ptr.h common/
+
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/include/breakpad/common/windows"
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/common/windows/string_utils-inl.h common/windows/
+
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/include/breakpad/client/windows/crash_generation"
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/crash_generation/client_info.h client/windows/crash_generation/
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/crash_generation/crash_generation_client.h client/windows/crash_generation/
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/crash_generation/crash_generation_server.h client/windows/crash_generation/
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/crash_generation/minidump_generator.h client/windows/crash_generation/
+
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/include/breakpad/client/windows/common"
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/common/ipc_protocol.h client/windows/common/
+
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/include/breakpad/client/windows/handler"
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/handler/exception_handler.h client/windows/handler/
+
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/include/breakpad/client/windows/sender"
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/sender/crash_report_sender.h client/windows/sender/
+
+    # Headers aren't really designed to be installed, so we need to do some
+    # rewriting to make them usefully included using "include <breakpad/somepath/someheader>"
+    find ${pkgdir}${MINGW_PREFIX} -name \*.h -exec sed -i -e's#client/windows/#breakpad/client/windows/#' {} \;
+    find ${pkgdir}${MINGW_PREFIX} -name \*.h -exec sed -i -e's#common/scoped_ptr#breakpad/common/scoped_ptr#' {} \;
+    find ${pkgdir}${MINGW_PREFIX} -name \*.h -exec sed -i -e's#common/windows/#breakpad/common/windows/#' {} \;
+    find ${pkgdir}${MINGW_PREFIX} -name \*.h -exec sed -i -e's#google_breakpad/common/#breakpad/common/#' {} \;
+
     # Install a single client library
     cd "${pkgdir}${MINGW_PREFIX}/lib"
-    ar -r libbreakpad_client.a "${srcdir}/${_name}.build.${CARCH}/src/out/Debug/obj.target/client/windows/crash_generation/libcrash_generation_client.a"
-    ar -r libbreakpad_client.a "${srcdir}/${_name}.build.${CARCH}/src/out/Debug/obj.target/client/windows/crash_generation/libcrash_generation_server.a"
-    ar -r libbreakpad_client.a "${srcdir}/${_name}.build.${CARCH}/src/out/Debug/obj.target/client/windows/handler/libexception_handler.a"
-    ar -r libbreakpad_client.a "${srcdir}/${_name}.build.${CARCH}/src/out/Debug/obj.target/client/windows/libcommon.a"
-    ar -r libbreakpad_client.a "${srcdir}/${_name}.build.${CARCH}/src/out/Debug/obj.target/client/windows/sender/libcrash_report_sender.a"
+    ar -M <<EOF
+CREATE libbreakpad_client.a
+ADDLIB ${srcdir}/${_name}.build.${CARCH}/src/out/Debug/obj.target/client/windows/crash_generation/libcrash_generation_client.a
+ADDLIB ${srcdir}/${_name}.build.${CARCH}/src/out/Debug/obj.target/client/windows/crash_generation/libcrash_generation_server.a
+ADDLIB ${srcdir}/${_name}.build.${CARCH}/src/out/Debug/obj.target/client/windows/handler/libexception_handler.a
+ADDLIB ${srcdir}/${_name}.build.${CARCH}/src/out/Debug/obj.target/client/windows/libcommon.a
+ADDLIB ${srcdir}/${_name}.build.${CARCH}/src/out/Debug/obj.target/client/windows/sender/libcrash_report_sender.a
+SAVE
+END
+EOF
+
+    # Install the pkgconfig file
     cp -v "${srcdir}/${_name}.build.${CARCH}/breakpad-client.pc" pkgconfig
+
+    # Install crash_generation_app sample source and instructions
+    mkdir -p "${pkgdir}${MINGW_PREFIX}/doc/breakpad/sample"
+    cd "${pkgdir}${MINGW_PREFIX}/doc/breakpad/sample"
+    cp -v ${srcdir}/${_name}.patches/README.sample .
+    cp -v ${srcdir}/${_name}.patches/Makefile .
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/tests/crash_generation_app/abstract_class.cc .
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/tests/crash_generation_app/abstract_class.h .
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/tests/crash_generation_app/crash_generation_app.cc .
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/tests/crash_generation_app/crash_generation_app.h .
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/tests/crash_generation_app/crash_generation_app.ico .
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/tests/crash_generation_app/resource.h .
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/tests/crash_generation_app/resource.rc .
+    cp -v ${srcdir}/${_name}.build.${CARCH}/src/client/windows/tests/crash_generation_app/small.ico .
+
+    # Rewrite simple Makefile for demo to use native toolchain
+    sed -i -e"s#CROSS_HOST-##" ${pkgdir}${MINGW_PREFIX}/doc/breakpad/sample/Makefile
+
+    # Rewrite demo includes for installed headers
+    sed -i -e's#client/windows/tests/crash_generation_app/##' ${pkgdir}${MINGW_PREFIX}/doc/breakpad/sample/*
+    sed -i -e's#client/windows/#breakpad/client/windows/#' ${pkgdir}${MINGW_PREFIX}/doc/breakpad/sample/*
 
     # License
     cd "${pkgdir}${MINGW_PREFIX}/share"
